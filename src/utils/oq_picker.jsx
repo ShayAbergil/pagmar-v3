@@ -1,4 +1,6 @@
-import { supabase } from '../lib/supabase'; // import the Supabase client
+import { supabase } from '../lib/supabase';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // The function will now accept statistic_data as a parameter
 export const getRelevantQuestions = async (statistic_data) => {
@@ -6,7 +8,7 @@ export const getRelevantQuestions = async (statistic_data) => {
         // Call Supabase to fetch the 3 questions with the lowest "oq_answer_count"
         const { data, error } = await supabase
             .from('Overview_questions') // Replace with the correct table name
-            .select('*') // Select all columns (you can narrow down the fields as needed)
+            .select('*') 
             .order('oq_answer_count', { ascending: true }) // Sort by "oq_answer_count" in ascending order
             .limit(3); // Get only the first 3 questions
 

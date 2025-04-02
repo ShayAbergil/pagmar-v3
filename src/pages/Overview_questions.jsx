@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { getRelevantQuestions } from '../utils/oq_picker';  // Assuming the function is in utils/oq_picker.js
+import { getRelevantQuestions } from '../utils/oq_picker';
 
-const OverviewQuestions = ({ statistic_data }) => {
+const OverviewQuestions = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const statistic_data = location.state?.statistic_data || null;
+
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
-  
+
+  console.log("✅ Received statistic_data:", statistic_data);
+
   useEffect(() => {
+    if (!statistic_data) {
+      console.warn("⚠️ Warning: statistic_data is missing. Proceeding with default values.");
+    }
+
     const fetchQuestions = async () => {
-      const fetchedQuestions = await getRelevantQuestions(statistic_data);
+      const fetchedQuestions = await getRelevantQuestions(statistic_data || {});
+      console.log("📋 Fetched Questions:", fetchedQuestions);
       setQuestions(fetchedQuestions);
     };
 
@@ -24,61 +36,107 @@ const OverviewQuestions = ({ statistic_data }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    console.log("📤 Submitting answers:", answers);
 
-    const userAnswers = Object.keys(answers).map(key => ({
-      user_id: statistic_data.id,  // Assuming 'statistic_data' has 'id'
-      oq_id: key,
-      answer_content: answers[key] || ''  // Store empty string if no answer provided
-    }));
+    const userAnswers = questions.map((question) => {
+        const answerValue = answers[question.id]; // Get the user's answer
+        if (!answerValue) return null; // Skip if the answer is empty
+
+        const formattedAnswer = {
+            oq_id: question.id,
+            user_id: statistic_data?.id || null, // Assuming statistic_data has an ID
+            answer_content_t: question.oq_type === "text" ? answerValue : null,
+            answer_content_int: question.oq_type === "int8" ? parseInt(answerValue, 10) || null : null
+        };
+
+        console.log(`📌 Answer for question ${question.id}:`, formattedAnswer);
+        return formattedAnswer;
+    }).filter(Boolean); // Remove null values (empty answers)
+
+    if (userAnswers.length === 0) {
+        console.warn("⚠️ No valid answers to submit.");
+        return;
+    }
 
     try {
-      const { data, error } = await supabase
-        .from('Overview_answers')
-        .insert(userAnswers)
-        .select();
+        console.log("📤 Pushing data to 'Overview_answers':", userAnswers);
+        const { data, error } = await supabase
+            .from("Overview_answers")
+            .insert(userAnswers)
+            .select();
 
-      if (error) {
-        throw new Error(error.message);
-      }
+        if (error) throw error;
+        console.log("✅ Successfully submitted answers:", data);
 
-      console.log('Answers submitted:', data);
-      // Redirect or notify user upon successful submission if needed
+      // 🔄 **Update `oq_answer_count` for each answered question**
+console.log("🔄 Updating 'oq_answer_count'...");
+
+await Promise.all(userAnswers.map(async (answer) => {
+  if (answer.answer_content_t || answer.answer_content_int !== null) {
+    console.log(`📊 Incrementing count for question ID: ${answer.oq_id}`);
+
+    // Step 1: Get the current `oq_answer_count`
+    const { data, error } = await supabase
+      .from("Overview_questions")
+      .select("oq_answer_count")
+      .eq("id", answer.oq_id)
+      .single();
+
+    if (error) {
+      console.error("🚨 Error fetching current answer count:", error.message);
+      return; // Skip this question if there is an error
+    }
+
+    // Step 2: Increment the current count
+    const newCount = (data?.oq_answer_count || 0) + 1;
+
+    // Step 3: Update the `oq_answer_count` with the incremented value
+    const { updateError } = await supabase
+      .from("Overview_questions")
+      .update({ oq_answer_count: newCount })
+      .eq("id", answer.oq_id);
+
+    if (updateError) {
+      console.error("🚨 Error updating oq_answer_count:", updateError.message);
+    } else {
+      console.log("✅ Successfully updated oq_answer_count for question ID:", answer.oq_id);
+    }
+  }
+}));
+
+
+        console.log("✅ Successfully updated 'oq_answer_count'");
+
+        // 🚀 **Navigate to 'Select_subject' after submission**
+        console.log("🎯 Navigating to /Select_subject...");
+        navigate("/Select_subject");
+
     } catch (error) {
-      console.error('Error submitting answers:', error.message);
+        console.error("🚨 Error submitting answers:", error.message);
     }
-  };
+};
 
-  const renderInputField = (question) => {
-    if (question.oq_type === 'text') {
-      return (
-        <input
-          type="text"
-          placeholder="Type your answer..."
-          value={answers[question.id] || ''}
-          onChange={(e) => handleInputChange(question.id, e.target.value)}
-        />
-      );
-    } else if (question.oq_type === 'number') {
-      return (
-        <input
-          type="number"
-          placeholder="Type your answer..."
-          value={answers[question.id] || ''}
-          onChange={(e) => handleInputChange(question.id, e.target.value)}
-        />
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="overview-questions-container">
-      <h1>שאלות נוספות</h1>
+      <h1>שאלות כלליות</h1>
+
+      {!statistic_data && <p className="warning-text">⚠️ נתונים סטטיסטיים חסרים, אך ניתן להמשיך.</p>}
+
+      <button onClick={() => navigate(-1)} className="back-button">חזור</button>
+
       <form onSubmit={handleSubmit} className="questions-form">
         {questions.map((question) => (
           <div key={question.id} className="question-card">
             <h3>{question.oq_text}</h3>
-            {renderInputField(question)}
+            <input
+              type={question.oq_type === 'int8' ? 'number' : 'text'}
+              className="input-field"
+              placeholder=""
+              value={answers[question.id] || ''}
+              onChange={(e) => handleInputChange(question.id, e.target.value)}
+            />
           </div>
         ))}
         <button type="submit" className="submit-button">שלח/י</button>
