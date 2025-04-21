@@ -7,6 +7,7 @@ const OverviewQuestions = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const statistic_data = location.state?.statistic_data || null;
+  const user_id = location.state?.user_id;
 
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
@@ -14,18 +15,14 @@ const OverviewQuestions = () => {
   console.log("✅ Received statistic_data:", statistic_data);
 
   useEffect(() => {
-    if (!statistic_data) {
-      console.warn("⚠️ Warning: statistic_data is missing. Proceeding with default values.");
-    }
-
     const fetchQuestions = async () => {
       const fetchedQuestions = await getRelevantQuestions(statistic_data || {});
       console.log("📋 Fetched Questions:", fetchedQuestions);
       setQuestions(fetchedQuestions);
     };
-
+  
     fetchQuestions();
-  }, [statistic_data]);
+  }, []);
 
   const handleInputChange = (questionId, value) => {
     setAnswers(prev => ({
@@ -45,7 +42,7 @@ const OverviewQuestions = () => {
 
         const formattedAnswer = {
             oq_id: question.id,
-            user_id: statistic_data?.id || null, // Assuming statistic_data has an ID
+            user_id: user_id,  
             answer_content_t: question.oq_type === "text" ? answerValue : null,
             answer_content_int: question.oq_type === "int8" ? parseInt(answerValue, 10) || null : null
         };
@@ -69,62 +66,55 @@ const OverviewQuestions = () => {
         if (error) throw error;
         console.log("✅ Successfully submitted answers:", data);
 
-      // 🔄 **Update `oq_answer_count` for each answered question**
-console.log("🔄 Updating 'oq_answer_count'...");
+        // 🔄 **Update `oq_answer_count` for each answered question**
+        console.log("🔄 Updating 'oq_answer_count'...");
 
-await Promise.all(userAnswers.map(async (answer) => {
-  if (answer.answer_content_t || answer.answer_content_int !== null) {
-    console.log(`📊 Incrementing count for question ID: ${answer.oq_id}`);
+        await Promise.all(userAnswers.map(async (answer) => {
+            if (answer.answer_content_t || answer.answer_content_int !== null) {
+                console.log(`📊 Incrementing count for question ID: ${answer.oq_id}`);
 
-    // Step 1: Get the current `oq_answer_count`
-    const { data, error } = await supabase
-      .from("Overview_questions")
-      .select("oq_answer_count")
-      .eq("id", answer.oq_id)
-      .single();
+                // Step 1: Get the current `oq_answer_count`
+                const { data, error } = await supabase
+                    .from("Overview_questions")
+                    .select("oq_answer_count")
+                    .eq("id", answer.oq_id)
+                    .single();
 
-    if (error) {
-      console.error("🚨 Error fetching current answer count:", error.message);
-      return; // Skip this question if there is an error
-    }
+                if (error) {
+                    console.error("🚨 Error fetching current answer count:", error.message);
+                    return; // Skip this question if there is an error
+                }
 
-    // Step 2: Increment the current count
-    const newCount = (data?.oq_answer_count || 0) + 1;
+                // Step 2: Increment the current count
+                const newCount = (data?.oq_answer_count || 0) + 1;
 
-    // Step 3: Update the `oq_answer_count` with the incremented value
-    const { updateError } = await supabase
-      .from("Overview_questions")
-      .update({ oq_answer_count: newCount })
-      .eq("id", answer.oq_id);
+                // Step 3: Update the `oq_answer_count` with the incremented value
+                const { updateError } = await supabase
+                    .from("Overview_questions")
+                    .update({ oq_answer_count: newCount })
+                    .eq("id", answer.oq_id);
 
-    if (updateError) {
-      console.error("🚨 Error updating oq_answer_count:", updateError.message);
-    } else {
-      console.log("✅ Successfully updated oq_answer_count for question ID:", answer.oq_id);
-    }
-  }
-}));
-
+                if (updateError) {
+                    console.error("🚨 Error updating oq_answer_count:", updateError.message);
+                } else {
+                    console.log("✅ Successfully updated oq_answer_count for question ID:", answer.oq_id);
+                }
+            }
+        }));
 
         console.log("✅ Successfully updated 'oq_answer_count'");
-
-        // 🚀 **Navigate to 'Select_subject' after submission**
-        console.log("🎯 Navigating to /Select_subject...");
-        navigate("/Select_subject");
+        navigate("/Select_subject", { state: { user_id } });
 
     } catch (error) {
         console.error("🚨 Error submitting answers:", error.message);
     }
 };
 
-
   return (
     <div className="overview-questions-container">
       <h1>שאלות כלליות</h1>
-
+      
       {!statistic_data && <p className="warning-text">⚠️ נתונים סטטיסטיים חסרים, אך ניתן להמשיך.</p>}
-
-      <button onClick={() => navigate(-1)} className="back-button">חזור</button>
 
       <form onSubmit={handleSubmit} className="questions-form">
         {questions.map((question) => (
@@ -139,6 +129,7 @@ await Promise.all(userAnswers.map(async (answer) => {
             />
           </div>
         ))}
+        <p>יש לענות על שאלה אחת לפחות</p>
         <button type="submit" className="submit-button">שלח/י</button>
       </form>
     </div>
